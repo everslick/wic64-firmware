@@ -23,8 +23,6 @@ namespace WiC64 {
 
     extern HttpClient* httpClient;
     extern Settings *settings;
-    extern uint32_t timeout;
-    extern uint32_t httpTimeout;
 
     HttpClient::HttpClient() {
         ESP_LOGI(TAG, "HTTP client initialized");
@@ -95,7 +93,6 @@ namespace WiC64 {
 
         int32_t size = 0;
         int32_t result;
-        uint8_t retries = MAX_RETRIES;
 
         int64_t request_content_length = method == HTTP_METHOD_POST
             ? strlen(HEADER) + data->size() + strlen(FOOTER)
@@ -109,7 +106,7 @@ namespace WiC64 {
         esp_http_client_config_t config = {
             .url = url,
             .method = method,
-            .timeout_ms = (int) httpTimeout,
+            .timeout_ms = (int) remoteTimeout,
             .disable_auto_redirect = false,
             .max_redirection_count = 10,
             .event_handler = eventHandler,
@@ -134,6 +131,9 @@ namespace WiC64 {
             command->error(Command::CLIENT_ERROR, "URL too long (max 2000 bytes)", "!0");
             goto ERROR;
         }
+
+        retries = MAX_RETRIES;
+        timeRequestStarted = millis();
 
     RETRY:
         if (isConnectionClosed()) {
@@ -175,7 +175,7 @@ namespace WiC64 {
             ESP_LOGW(TAG, "Retrying %d more time%s...",
                 retries+1, (retries > 1) ? "s" : "");
 
-            if (retries-- > 0) {
+            if (canRetry(command)) {
                 closeConnection();
                 goto RETRY;
             } else {
@@ -205,9 +205,9 @@ namespace WiC64 {
                         ? WIC64_QUEUE_ITEM_SIZE
                         : bytes_remaining;
 
-                    if (!command->aborted() && xQueueReceive(data->queue(), transferQueueBuffer, pdMS_TO_TICKS(timeout)) == pdTRUE) {
+                    if (!command->aborted() && xQueueReceive(data->queue(), transferQueueReceiveBuffer, pdMS_TO_TICKS(transferTimeout)) == pdTRUE) {
 
-                        if (esp_http_client_write(m_client, (const char*) transferQueueBuffer, size) != size) {
+                        if (esp_http_client_write(m_client, (const char*) transferQueueReceiveBuffer, size) != size) {
                             ESP_LOGE(TAG, "Failed to send POST data to server");
                             command->error(Command::NETWORK_ERROR,
                                 "Failed to send POST data to server", "!0");
@@ -247,7 +247,7 @@ namespace WiC64 {
                 ESP_LOGW(TAG, "Failed to send POST request body, retrying %d more time%s...",
                     retries+1, (retries > 1) ? "s" : "");
 
-                if ((retries-- > 0) && !command->aborted() && !command->request()->payload()->isQueued()) {
+                if (canRetry(command) && !command->request()->payload()->isQueued()) {
                     closeConnection();
                     goto RETRY;
                 } else {
@@ -261,7 +261,7 @@ namespace WiC64 {
 
         if ((result = esp_http_client_fetch_headers(m_client)) == ESP_FAIL) {
 
-            if ((retries-- > 0) && !command->aborted() && !command->request()->payload()->isQueued()) {
+            if (canRetry(command) && !command->request()->payload()->isQueued()) {
                 ESP_LOGW(TAG, "Failed to fetch headers, retrying %d more time%s...",
                     retries+1, (retries > 1) ? "s" : "");
 
@@ -372,6 +372,21 @@ namespace WiC64 {
         return m_client == NULL;
     }
 
+    bool HttpClient::canRetry(Command* command) {
+        uint32_t elapsed = millis() - timeRequestStarted;
+
+        if (elapsed > (remoteTimeout - 1000)) {
+            return false;
+        }
+
+        if (retries - 1 > 0 && !command->aborted()) {
+            retries -= 1;
+            return true;
+        }
+
+        return false;
+    }
+
     void HttpClient::queueTask(void *content_length_ptr) {
         int32_t content_length = *((int32_t *) content_length_ptr);
 
@@ -380,7 +395,7 @@ namespace WiC64 {
         ESP_LOGD(TAG, "Client queue task queueing %d bytes...", content_length);
 
         do {
-            bytes_read = esp_http_client_read(httpClient->handle(), (char*) transferQueueBuffer, WIC64_QUEUE_ITEM_SIZE);
+            bytes_read = esp_http_client_read(httpClient->handle(), (char*) transferQueueSendBuffer, WIC64_QUEUE_ITEM_SIZE);
 
             if (bytes_read == -1) {
                 ESP_LOGE(TAG, "Read Error");
@@ -388,8 +403,8 @@ namespace WiC64 {
                 break;
             }
             ESP_LOGV(TAG, "Queueing %d bytes", WIC64_QUEUE_ITEM_SIZE);
-            if (xQueueSend(transferQueue, transferQueueBuffer, pdMS_TO_TICKS(timeout)) != pdTRUE) {
-                ESP_LOGW(TAG, "Could not send to queue for more than %dms", timeout);
+            if (xQueueSend(transferQueue, transferQueueSendBuffer, pdMS_TO_TICKS(transferTimeout)) != pdTRUE) {
+                ESP_LOGW(TAG, "Could not send to queue for more than %dms", transferTimeout);
                 httpClient->closeConnection();
                 break;
             }
@@ -401,7 +416,8 @@ namespace WiC64 {
         vTaskDelete(NULL);
     }
 
-    const char* HttpClient::statusToString(int32_t code) {
+    const char *HttpClient::statusToString(int32_t code)
+    {
         static char unknown[24];
         switch (code) {
             //####### 1xx - Informational #######

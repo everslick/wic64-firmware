@@ -7,11 +7,11 @@ namespace WiC64 {
 
     const char* Timeout::describe() {
         switch (id()) {
-            case WIC64_CMD_SET_TIMEOUT:
+            case WIC64_CMD_SET_TRANSFER_TIMEOUT:
                 return "Timeout (set transfer timeout)";
                 break;
-            case WIC64_CMD_SET_HTTP_TIMEOUT:
-                return "Timeout (set HTTP request timeout)";
+            case WIC64_CMD_SET_REMOTE_TIMEOUT:
+                return "Timeout (set remote request timeout)";
                 break;
             default:
                 return "Unhandled Timeout command id (?)";
@@ -22,7 +22,7 @@ namespace WiC64 {
         Data* payload = request()->payload();
         uint8_t seconds;
 
-        const char *type = id() == WIC64_CMD_SET_TIMEOUT
+        const char *type = id() == WIC64_CMD_SET_TRANSFER_TIMEOUT
             ? "transfer"
             : "HTTP request";
 
@@ -40,13 +40,13 @@ namespace WiC64 {
             goto DONE;
         }
 
-        if (id() == WIC64_CMD_SET_TIMEOUT) {
-            customTimeout = seconds * 1000;
-            ESP_LOGI(TAG, "Transfer timeout set to %dms", customTimeout);
+        if (id() == WIC64_CMD_SET_TRANSFER_TIMEOUT) {
+            customTransferTimeout = seconds * 1000;
+            ESP_LOGI(TAG, "Transfer timeout set to %dms", customTransferTimeout);
         }
         else {
-            customHttpTimeout = seconds * 1000;
-            ESP_LOGI(TAG, "HTTP request timeout set to %dms", customHttpTimeout);
+            customRemoteTimeout = seconds * 1000;
+            ESP_LOGI(TAG, "HTTP request timeout set to %dms", customRemoteTimeout);
         }
 
     DONE:

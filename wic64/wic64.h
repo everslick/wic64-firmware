@@ -10,10 +10,10 @@
 #include "../generated-version.h"
 #include "esp_log.h"
 
-#define WIC64_DEFAULT_TIMEOUT 1000
-#define WIC64_DEFAULT_HTTP_TIMEOUT 5000
+#define WIC64_DEFAULT_TRANSFER_TIMEOUT 1000
+#define WIC64_DEFAULT_REMOTE_TIMEOUT 5000
 
-#define WIC64_QUEUE_ITEM_SIZE 0x2000
+#define WIC64_QUEUE_ITEM_SIZE 0x1000
 #define WIC64_QUEUE_SIZE (0x10000 / WIC64_QUEUE_ITEM_SIZE)
 
 #define WIC64_QUEUE_ITEMS_REQUIRED(size) \
@@ -50,13 +50,14 @@ namespace WiC64 {
     extern uint8_t *transferBuffer;
 
     extern QueueHandle_t transferQueue;
-    extern uint8_t transferQueueBuffer[WIC64_QUEUE_ITEM_SIZE];
+    extern uint8_t transferQueueSendBuffer[WIC64_QUEUE_ITEM_SIZE];
+    extern uint8_t transferQueueReceiveBuffer[WIC64_QUEUE_ITEM_SIZE];
 
-    extern uint32_t timeout;
-    extern uint32_t customTimeout;
+    extern uint32_t transferTimeout;
+    extern uint32_t customTransferTimeout;
 
-    extern uint32_t httpTimeout;
-    extern uint32_t customHttpTimeout;
+    extern uint32_t remoteTimeout;
+    extern uint32_t customRemoteTimeout;
 
     class WiC64 {
         private:
